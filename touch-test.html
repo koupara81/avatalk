@@ -748,7 +748,7 @@
           </svg>
           <span id="voice-mode-label">音声 ON</span>
         </div>
-        <div id="voice-transcript" class="voice-transcript">マイクをタップして音声入力を開始します</div>
+        <div id="voice-transcript" class="voice-transcript">マイクを長押しして音声入力を開始します</div>
       </div>
       <div class="voice-diagnostics">
         <div class="diag-title">音声診断</div>
@@ -803,10 +803,11 @@
     interimTranscript: '',
     finalTranscript: '',
     micPermission: 'unknown',
-    lastVoiceToggleAt: 0,
     secureContext: false,
     topLevelContext: true,
     mediaDevicesSupported: false,
+    pressActive: false,
+    holdReady: false,
   };
   const MAX_LOG = 300;
   const DEMO_VOICE_QUERY = '図書館への行き方を教えて';
@@ -1022,9 +1023,9 @@
       return;
     }
     if (State.recognitionSupported) {
-      setVoiceTranscript('マイクをタップして音声入力を開始します');
+      setVoiceTranscript('マイクを長押しして音声入力を開始します');
     } else {
-      setVoiceTranscript('このブラウザは音声認識非対応です。タップでダミー音声入力を実行します');
+      setVoiceTranscript('このブラウザは音声認識非対応です。長押しでダミー音声入力を実行します');
     }
   }
 
@@ -1185,6 +1186,9 @@
   var voiceLabel = document.getElementById('voice-label');
   var recognition = null;
   var voiceTimer = null;
+  var holdTimer = null;
+  var activePointerId = null;
+  var HOLD_DELAY_MS = 350;
 
   function setListening(val) {
     State.listening = val;
@@ -1258,6 +1262,12 @@
     voiceTimer = null;
   }
 
+  function clearHoldTimer() {
+    if (!holdTimer) return;
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+
   async function ensureMicrophoneAccess() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       State.mediaDevicesSupported = false;
@@ -1287,7 +1297,7 @@
     clearVoiceTimer();
     State.finalTranscript = '';
     setListening(true);
-    State.interimTranscript = 'デモ音声入力中... もう一度タップで送信';
+    State.interimTranscript = 'デモ音声入力中... 指を離すと送信';
     updateVoicePrompt();
   }
 
@@ -1383,12 +1393,20 @@
     }
   }
 
+  function resetPressState() {
+    State.pressActive = false;
+    State.holdReady = false;
+    activePointerId = null;
+    clearHoldTimer();
+  }
+
   function stopVoice(reason) {
     if (!State.listening) return;
     clearVoiceTimer();
     if (State.voiceMode === 'demo') {
       setListening(false);
       handleUserQuery(State.finalTranscript || DEMO_VOICE_QUERY);
+      resetPressState();
       return;
     }
     if (recognition) {
@@ -1403,28 +1421,71 @@
     } else {
       setListening(false);
     }
+    resetPressState();
   }
 
-  function toggleVoiceInput() {
-    var now = Date.now();
-    if (now - State.lastVoiceToggleAt < 250) return;
-    State.lastVoiceToggleAt = now;
-    if (State.listening) {
-      logEvent('voice', 'btn-voice', 'タップで送信');
-      stopVoice('tap');
-      return;
+  voiceBtn.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    if (State.pressActive || State.listening) return;
+    State.pressActive = true;
+    State.holdReady = false;
+    activePointerId = e.pointerId;
+    if (voiceBtn.setPointerCapture) {
+      try {
+        voiceBtn.setPointerCapture(e.pointerId);
+      } catch (err) {
+        logEvent('voice', 'btn-voice', 'capture失敗: ' + err.message);
+      }
     }
-    logEvent('voice', 'btn-voice', 'タップで開始');
-    startRecognitionCapture();
-  }
+    setVoiceHint('長押し判定中...');
+    clearHoldTimer();
+    holdTimer = setTimeout(function () {
+      State.holdReady = true;
+      logEvent('voice', 'btn-voice', '長押し成立');
+      startRecognitionCapture();
+    }, HOLD_DELAY_MS);
+  });
 
   voiceBtn.addEventListener('pointerup', function (e) {
     e.preventDefault();
-    toggleVoiceInput();
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    if (voiceBtn.releasePointerCapture && voiceBtn.hasPointerCapture && voiceBtn.hasPointerCapture(e.pointerId)) {
+      try {
+        voiceBtn.releasePointerCapture(e.pointerId);
+      } catch (err) {
+        logEvent('voice', 'btn-voice', 'release失敗: ' + err.message);
+      }
+    }
+    if (!State.holdReady) {
+      logEvent('voice', 'btn-voice', '長押し不足');
+      resetPressState();
+      updateVoicePrompt();
+      return;
+    }
+    logEvent('voice', 'btn-voice', '指を離して送信');
+    stopVoice('pointerup');
   });
-  voiceBtn.addEventListener('click', function (e) {
-    e.preventDefault();
-    toggleVoiceInput();
+
+  voiceBtn.addEventListener('pointerleave', function (e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    if (!State.holdReady) {
+      resetPressState();
+      updateVoicePrompt();
+      return;
+    }
+    logEvent('voice', 'btn-voice', '領域外で送信');
+    stopVoice('pointerleave');
+  });
+
+  voiceBtn.addEventListener('pointercancel', function (e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    logEvent('voice', 'btn-voice', '入力キャンセル');
+    if (State.listening) {
+      stopVoice('pointercancel');
+      return;
+    }
+    resetPressState();
+    updateVoicePrompt();
   });
 
   /* ════════════════════════════════════
