@@ -1028,6 +1028,11 @@
     }
   }
 
+  function setVoiceHint(text) {
+    State.interimTranscript = text;
+    updateVoicePrompt();
+  }
+
   updateVoiceModeLabel();
   updateVoicePrompt();
   updateVoiceDiagnostics();
@@ -1296,6 +1301,27 @@
 
     recognition.onstart = function () {
       logEvent('voice', 'stt', '音声認識開始');
+      setVoiceHint('音声認識を開始しました。話してください');
+    };
+    recognition.onaudiostart = function () {
+      logEvent('voice', 'stt', '音声入力検出');
+      setVoiceHint('マイク入力を検出しました');
+    };
+    recognition.onsoundstart = function () {
+      logEvent('voice', 'stt', 'サウンド開始');
+    };
+    recognition.onspeechstart = function () {
+      logEvent('voice', 'stt', '発話開始');
+      setVoiceHint('発話を認識中...');
+    };
+    recognition.onspeechend = function () {
+      logEvent('voice', 'stt', '発話終了');
+    };
+    recognition.onsoundend = function () {
+      logEvent('voice', 'stt', 'サウンド終了');
+    };
+    recognition.onaudioend = function () {
+      logEvent('voice', 'stt', '音声入力終了');
     };
     recognition.onresult = function (event) {
       var interim = '';
@@ -1309,16 +1335,24 @@
       if (finalText.trim()) {
         State.finalTranscript = finalText.trim();
         logEvent('voice', 'stt', '取得: ' + State.finalTranscript);
+      } else if (State.interimTranscript) {
+        logEvent('voice', 'stt', '途中: ' + State.interimTranscript);
       }
       updateVoicePrompt();
     };
+    recognition.onnomatch = function () {
+      logEvent('voice', 'stt', '認識候補なし');
+      setVoiceHint('音声をうまく認識できませんでした');
+    };
     recognition.onerror = function (event) {
       logEvent('voice', 'stt', '認識失敗: ' + event.error);
+      setVoiceHint('認識エラー: ' + event.error);
       setListening(false);
       recognition = null;
     };
     recognition.onend = function () {
       var transcript = (State.finalTranscript || State.interimTranscript || '').trim();
+      logEvent('voice', 'stt', '認識終了');
       setListening(false);
       recognition = null;
       if (transcript) handleUserQuery(transcript);
