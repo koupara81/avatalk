@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Campus AI タッチパネル挙動確認</title>
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #1a2e1a;
+      font-family: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Meiryo', 'Noto Sans JP', sans-serif;
+    }
+    ::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
+    button { cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; }
+
+    /* ── Scaler ── */
+    #scaler-host {
+      width: 100vw; height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; position: relative;
+    }
+    #kiosk-root {
+      width: 1920px; height: 1080px;
+      transform-origin: top left;
+      position: absolute;
+      overflow: hidden;
+    }
+
+    /* ── Screen visibility ── */
+    .screen { display: none; width: 100%; height: 100%; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* ═══════════════════════════════════
+       START SCREEN
+    ════════════════════════════════════ */
+    #screen-start {
+      background: #1a2e1a;
+      align-items: center; justify-content: center;
+    }
+    .start-btn {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 24px; background: none; border: none; color: #fff;
+    }
+    .start-circle {
+      width: 120px; height: 120px; border-radius: 50%;
+      background: linear-gradient(135deg, #4caf50, #2e7d32);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 40px rgba(76,175,80,0.5);
+      animation: pulse-start 2s ease-in-out infinite;
+    }
+    .start-circle svg { display: block; }
+    .start-label { font-size: 28px; font-weight: bold; letter-spacing: 4px; }
+    @keyframes pulse-start {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(76,175,80,0.5); }
+      50% { transform: scale(1.08); box-shadow: 0 0 60px rgba(76,175,80,0.8); }
+    }
+
+    /* ═══════════════════════════════════
+       KIOSK CHROME (header/main/footer)
+    ════════════════════════════════════ */
+    #kiosk-chrome {
+      width: 1920px; height: 1080px;
+      display: none; flex-direction: column; position: absolute; top: 0; left: 0;
+    }
+    #kiosk-chrome.visible { display: flex; }
+
+    /* Header */
+    #kiosk-header {
+      height: 80px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8faf8 100%);
+      border-bottom: 5px solid #3d8c40;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      z-index: 30;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-icon { display: flex; align-items: center; }
+    .header-title { font-size: 32px; font-weight: bold; color: #1a1a1a; }
+    .status-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 20px; border-radius: 9999px;
+      background: #e8f5e9; border: 2px solid #3d8c40;
+      font-size: 20px; font-weight: 600; color: #2e7d32;
+    }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%; background: #3d8c40;
+      animation: status-blink 2s ease-in-out infinite;
+    }
+    @keyframes status-blink {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+
+    /* Footer */
+    #kiosk-footer {
+      height: 70px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px;
+      background: linear-gradient(0deg, #f5f5f5 0%, #ffffff 100%);
+      border-top: 3px solid #ddd;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+      z-index: 30;
+    }
+    #time-display { font-size: 24px; font-weight: bold; color: #3d8c40; }
+    .footer-center { font-size: 18px; color: #999; }
+    .lang-btn {
+      background: none; border: 2px solid #bbb; border-radius: 9999px;
+      padding: 6px 20px; font-size: 18px; color: #666;
+    }
+
+    /* Main area */
+    #main-area {
+      flex: 1; min-height: 0; display: flex; position: relative;
+      background: linear-gradient(180deg, #d6eaf8 0%, #e8f5e9 40%, #c8e6c9 70%, #a5d6a7 100%);
+    }
+    #content-col {
+      width: 65%; flex-shrink: 0; display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    #char-col {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+    }
+    .char-placeholder {
+      width: 400px; height: 600px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 24px;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 16px;
+      border: 3px dashed rgba(61,140,64,0.3);
+      color: rgba(61,140,64,0.5); font-size: 20px; text-align: center;
+    }
+
+    /* ═══════════════════════════════════
+       IDLE SCREEN
+    ════════════════════════════════════ */
+    #screen-idle {
+      flex-direction: column; gap: 32px;
+      padding: 32px 40px;
+    }
+
+    /* Speech bubble */
+    .speech-bubble {
+      position: relative;
+      background: white;
+      border: 5px solid #3d8c40;
+      border-radius: 2.5rem;
+      padding: 28px 56px;
+      margin-right: 30px;
+      box-shadow: 0 8px 30px rgba(61,140,64,0.12), inset 0 2px 0 rgba(255,255,255,0.9);
+      font-size: 32px; font-weight: bold; color: #1a1a1a;
+      white-space: nowrap; align-self: flex-start;
+    }
+    .speech-bubble::before {
+      content: '';
+      position: absolute; top: 50%; right: -26px;
+      transform: translateY(-50%);
+      border-top: 18px solid transparent;
+      border-bottom: 18px solid transparent;
+      border-left: 24px solid #3d8c40;
+    }
+    .speech-bubble::after {
+      content: '';
+      position: absolute; top: 50%; right: -18px;
+      transform: translateY(-50%);
+      border-top: 14px solid transparent;
+      border-bottom: 14px solid transparent;
+      border-left: 20px solid white;
+    }
+
+    /* Category cards */
+    .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .category-card {
+      background: linear-gradient(180deg, #ffffff 0%, #f9fff9 100%);
+      border: 6px solid #3d8c40;
+      border-radius: 1.75rem;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      box-shadow: 0 4px 16px rgba(61,140,64,0.10), 0 1px 3px rgba(0,0,0,0.06);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 40px 24px; text-align: center;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .category-card:hover {
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: 0 12px 40px rgba(61,140,64,0.22), 0 2px 6px rgba(0,0,0,0.08);
+      border-color: #2e7d32;
+    }
+    .category-card.pressed { transform: scale(0.98) !important; }
+
+    .category-card-alert {
+      background: linear-gradient(180deg, #ffffff 0%, #fff8f8 100%);
+      border-color: #d32f2f;
+      flex-direction: row; justify-content: flex-start;
+      text-align: left; padding: 32px 40px; gap: 32px;
+    }
+    .category-card-alert:hover {
+      border-color: #b71c1c;
+      box-shadow: 0 12px 40px rgba(211,47,47,0.20), 0 2px 6px rgba(0,0,0,0.08);
+    }
+
+    .card-badge {
+      width: 56px; height: 56px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px; font-weight: bold; color: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      flex-shrink: 0;
+    }
+    .badge-green { background: #3d8c40; }
+    .badge-red { background: #d32f2f; }
+
+    .card-icons { display: flex; align-items: center; gap: 20px; margin: 20px 0; }
+    .icon-box {
+      width: 96px; height: 96px; border-radius: 16px;
+      border: 3px solid rgba(61,140,64,0.25);
+      background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .icon-box-red { border-color: rgba(211,47,47,0.25); }
+
+    .card-title { font-size: 2.5rem; font-weight: bold; color: #1a1a1a; line-height: 1.2; }
+    .card-title-red { color: #d32f2f; }
+    .card-desc { margin-top: 8px; font-size: 1.75rem; color: #777; }
+
+    .alert-left { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+    .alert-text { flex: 1; }
+
+    /* ═══════════════════════════════════
+       CHAT SCREEN
+    ════════════════════════════════════ */
+    #screen-chat {
+      flex-direction: column;
+      padding: 24px 40px;
+    }
+    #messages-area {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column; gap: 20px;
+      overflow-y: auto; padding-right: 8px;
+    }
+    .message-row { display: flex; }
+    .row-user { justify-content: flex-start; animation: fadeInLeft 0.3s ease; }
+    .row-assistant { justify-content: flex-end; animation: fadeInRight 0.3s ease; }
+
+    .user-bubble {
+      background: linear-gradient(135deg, #e8f5e9 0%, #ffffff 100%);
+      border: 4px solid #3d8c40;
+      border-radius: 2rem 2rem 2rem 0.5rem;
+      padding: 20px 32px;
+      max-width: 512px;
+      font-size: 24px; font-weight: bold; color: #2e7d32;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }
+    .assistant-bubble {
+      position: relative;
+      background: linear-gradient(135deg, #ffffff 0%, #f0faf0 100%);
+      border: 4px solid #3d8c40;
+      border-radius: 2rem 2rem 0.5rem 2rem;
+      padding: 20px 32px;
+      max-width: 576px;
+      font-size: 24px; line-height: 1.6; color: #1a1a1a;
+      margin-right: 28px;
+      box-shadow: 0 6px 24px rgba(61,140,64,0.12);
+    }
+    .assistant-bubble::before {
+      content: '';
+      position: absolute; top: 24px; right: -22px;
+      border-top: 14px solid transparent;
+      border-bottom: 14px solid transparent;
+      border-left: 20px solid #3d8c40;
+    }
+    .assistant-bubble::after {
+      content: '';
+      position: absolute; top: 28px; right: -14px;
+      border-top: 10px solid transparent;
+      border-bottom: 10px solid transparent;
+      border-left: 16px solid #f0faf0;
+    }
+    .typing-row { display: flex; justify-content: flex-end; }
+    .typing-bubble {
+      display: flex; align-items: center; gap: 8px;
+      padding: 20px 32px;
+    }
+    .typing-dot {
+      display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+      background: #3d8c40;
+      animation: typing-bounce 1.4s ease-in-out infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    /* Suggestions */
+    #suggestion-area { padding-top: 20px; flex-shrink: 0; }
+    .suggest-label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 18px; color: #999; margin-bottom: 12px;
+    }
+    .chips-row { display: flex; flex-wrap: wrap; gap: 16px; }
+    .chip-btn {
+      display: flex; align-items: center; gap: 12px;
+      background: white; border-radius: 9999px;
+      padding: 16px 28px;
+      font-size: 20px; font-weight: bold; color: #1a1a1a;
+      border: 4px solid #3d8c40;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      -webkit-tap-highlight-color: transparent;
+      transition: all 0.15s ease;
+    }
+    .chip-btn:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+    .chip-btn:active { transform: scale(0.95); }
+
+    /* ═══════════════════════════════════
+       VOICE BUTTON CLUSTER
+    ════════════════════════════════════ */
+    #voice-cluster {
+      position: absolute; z-index: 20;
+      right: 50px; bottom: 100px;
+      display: none;
+      flex-direction: column; align-items: center; gap: 20px;
+    }
+    #voice-cluster.visible { display: flex; }
+
+    .back-btn {
+      display: flex; align-items: center; gap: 8px;
+      background: linear-gradient(135deg, #43a047, #2e7d32);
+      border: none; border-radius: 9999px;
+      padding: 12px 28px;
+      font-size: 20px; font-weight: bold; color: white;
+      box-shadow: 0 4px 16px rgba(46,125,50,0.3);
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.1s;
+    }
+    .back-btn:active { transform: scale(0.95); }
+
+    .voice-btn {
+      width: 200px; height: 200px; border-radius: 50%;
+      background: white;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 0 20px rgba(61,140,64,0.2);
+      padding: 12px; position: relative;
+      border: none;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .voice-btn.idle-glow { animation: glow-pulse 2s ease-in-out infinite; }
+    .voice-btn.listening {
+      box-shadow: 0 0 40px rgba(46,125,50,0.6), 0 8px 40px rgba(0,0,0,0.15);
+    }
+
+    .pulse-ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: rgba(61,140,64,0.3);
+      display: none;
+      animation: pulse-ring 1.5s cubic-bezier(0.215,0.61,0.355,1) infinite;
+    }
+    .pulse-ring.ring2 { background: rgba(61,140,64,0.15); animation-delay: 0.5s; }
+    .voice-btn.listening .pulse-ring { display: block; }
+
+    .voice-inner {
+      width: 100%; height: 100%; border-radius: 50%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 4px; transition: background 0.2s ease;
+    }
+    .voice-inner.state-idle {
+      background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+    }
+    .voice-inner.state-listening {
+      background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
+    }
+    .voice-label { font-size: 18px; font-weight: bold; color: rgba(255,255,255,0.9); }
+
+    .voice-status {
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      min-width: 240px;
+      font-size: 20px; color: #555;
+      text-align: center;
+    }
+    .voice-status-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .voice-transcript {
+      min-height: 48px;
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.82);
+      border: 2px solid rgba(61,140,64,0.18);
+      font-size: 16px;
+      line-height: 1.4;
+      color: #2f3d2f;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }
+    .voice-diagnostics {
+      width: 100%;
+      max-width: 320px;
+      padding: 12px 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.9);
+      border: 2px solid rgba(61,140,64,0.15);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+      text-align: left;
+    }
+    .diag-title {
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      color: #2e7d32;
+      letter-spacing: 0.04em;
+    }
+    .diag-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .diag-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #3a3a3a;
+    }
+    .diag-name {
+      font-weight: 600;
+      color: #516151;
+    }
+    .diag-value {
+      font-weight: bold;
+      color: #1f1f1f;
+    }
+    .diag-ok { color: #2e7d32; }
+    .diag-warn { color: #ef6c00; }
+    .diag-ng { color: #c62828; }
+
+    /* ═══════════════════════════════════
+       ANIMATIONS
+    ════════════════════════════════════ */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.9); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 20px rgba(61,140,64,0.3), 0 8px 32px rgba(46,125,50,0.25); }
+      50% { box-shadow: 0 0 40px rgba(61,140,64,0.5), 0 8px 40px rgba(46,125,50,0.35); }
+    }
+    @keyframes fadeInLeft {
+      from { opacity: 0; transform: translateX(-20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes fadeInRight {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes typing-bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-8px); }
+    }
+
+    /* ═══════════════════════════════════
+       TEST LOG PANEL (native resolution)
+    ════════════════════════════════════ */
+    #test-log-panel {
+      position: fixed; bottom: 0; right: 0;
+      width: 380px; height: 45vh;
+      background: rgba(8, 8, 8, 0.90);
+      color: #e0e0e0;
+      font-family: 'Courier New', 'Menlo', monospace;
+      font-size: 11px;
+      z-index: 9999;
+      display: flex; flex-direction: column;
+      border-top-left-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: height 0.3s ease;
+    }
+    #test-log-panel.collapsed { height: 34px; overflow: hidden; }
+
+    #log-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 10px; flex-shrink: 0;
+      background: rgba(61,140,64,0.25);
+      border-bottom: 1px solid rgba(61,140,64,0.35);
+      font-size: 11px; font-weight: bold; color: #a5d6a7;
+      border-top-left-radius: 12px;
+    }
+    .log-controls { display: flex; gap: 6px; }
+    .log-ctrl-btn {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px; padding: 2px 8px; font-size: 10px; color: #ccc;
+      cursor: pointer;
+    }
+    .log-ctrl-btn:hover { background: rgba(255,255,255,0.15); }
+
+    #log-badges {
+      display: flex; gap: 4px; padding: 5px 10px; flex-wrap: wrap; flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .badge {
+      padding: 2px 7px; border-radius: 4px; font-size: 10px;
+      background: #2a2a2a; color: #666; border: 1px solid #444;
+      transition: all 0.08s;
+    }
+    .badge.flash-pointerdown { background: #1a237e; color: #90caf9; border-color: #3949ab; }
+    .badge.flash-pointerup   { background: #1b5e20; color: #a5d6a7; border-color: #2e7d32; }
+    .badge.flash-pointermove { background: #4a1942; color: #ce93d8; border-color: #7b1fa2; }
+    .badge.flash-pointerleave{ background: #e65100; color: #ffe082; border-color: #bf360c; }
+    .badge.flash-click       { background: #880e4f; color: #f48fb1; border-color: #ad1457; }
+    .badge.flash-pointercancel{ background: #4e342e; color: #ffab91; border-color: #6d4c41; }
+
+    #log-entries {
+      flex: 1; overflow-y: auto; padding: 4px 10px;
+    }
+    .log-entry {
+      padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 10.5px; line-height: 1.5;
+    }
+    .log-time { color: #555; }
+    .log-type-pointerdown  { color: #90caf9; font-weight: bold; }
+    .log-type-pointerup    { color: #a5d6a7; font-weight: bold; }
+    .log-type-pointermove  { color: #ce93d8; }
+    .log-type-pointerleave { color: #ffe082; font-weight: bold; }
+    .log-type-click        { color: #f48fb1; font-weight: bold; }
+    .log-type-pointercancel{ color: #ffab91; font-weight: bold; }
+    .log-type-screen       { color: #80deea; font-weight: bold; }
+    .log-type-fullscreen   { color: #fff176; font-weight: bold; }
+    .log-type-voice        { color: #ffcc80; font-weight: bold; }
+    .log-target { color: #80cbc4; }
+    .log-detail { color: #999; }
+
+    #log-footer {
+      display: flex; justify-content: space-between; flex-wrap: wrap;
+      padding: 4px 10px; gap: 4px;
+      background: rgba(0,0,0,0.3);
+      border-top: 1px solid rgba(255,255,255,0.05);
+      font-size: 10px; color: #555; flex-shrink: 0;
+    }
+    #fullscreen-status { color: #888; }
+    #device-info { color: #666; }
+  </style>
+</head>
+<body>
+
+<!-- ╔══════════════════════════════╗
+     ║  Scaled kiosk viewport       ║
+     ╚══════════════════════════════╝ -->
+<div id="scaler-host">
+  <div id="kiosk-root">
+
+    <!-- ── START SCREEN ── -->
+    <div id="screen-start" class="screen active">
+      <button id="btn-start" class="start-btn">
+        <div class="start-circle">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </div>
+        <span class="start-label">タッチして開始</span>
+      </button>
+    </div>
+
+    <!-- ── KIOSK CHROME (header/main/footer) ── -->
+    <div id="kiosk-chrome">
+      <!-- Header -->
+      <div id="kiosk-header">
+        <div class="header-left">
+          <div class="header-icon">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+          </div>
+          <span class="header-title">学内情報</span>
+        </div>
+        <div class="status-badge">
+          <span class="status-dot"></span>
+          <span>平常通りです</span>
+        </div>
+      </div>
+
+      <!-- Main area -->
+      <div id="main-area">
+        <div id="content-col">
+          <!-- Idle screen lives here -->
+          <div id="screen-idle" class="screen">
+            <!-- Speech bubble -->
+            <div class="speech-bubble" style="margin:32px 40px 0 40px;">
+              聞きたいことを選んでください。音声やタッチで案内します♪
+            </div>
+
+            <!-- 2-card grid -->
+            <div class="card-grid" style="margin:24px 40px 0 40px; flex:1; min-height:0;">
+              <!-- Card 1: Learning -->
+              <button class="category-card" id="card-learning" data-category="learning">
+                <div class="card-badge badge-green">1</div>
+                <div class="card-icons">
+                  <div class="icon-box">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    </svg>
+                  </div>
+                  <div class="icon-box">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="card-title">学習・講義に関する情報</div>
+                <div class="card-desc">休講、教室変更、時間割、シラバス検索など</div>
+              </button>
+
+              <!-- Card 2: Campus -->
+              <button class="category-card" id="card-campus" data-category="campus">
+                <div class="card-badge badge-green">2</div>
+                <div class="card-icons">
+                  <div class="icon-box">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                      <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                  </div>
+                  <div class="icon-box">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/>
+                      <path d="M7 2v20"/>
+                      <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="card-title">キャンパス生活・施設案内</div>
+                <div class="card-desc">学食、主要ルート、図書館、売店など</div>
+              </button>
+            </div>
+
+            <!-- Alert card -->
+            <button class="category-card category-card-alert" id="card-safety" data-category="safety"
+              style="margin:16px 40px 24px 40px;">
+              <div class="alert-left">
+                <div class="card-badge badge-red">3</div>
+                <div class="icon-box icon-box-red">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#d32f2f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                </div>
+                <div class="icon-box icon-box-red">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#d32f2f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="alert-text">
+                <div class="card-title card-title-red">安全・緊急時のアナウンス</div>
+                <div class="card-desc">避難経路、緊急時対応、連絡先、不審者情報など</div>
+              </div>
+            </button>
+          </div>
+
+          <!-- Chat screen lives here -->
+          <div id="screen-chat" class="screen" style="flex-direction:column;">
+            <div id="messages-area"></div>
+            <div id="suggestion-area" style="display:none;">
+              <div class="suggest-label">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                こちらも聞いてみませんか？
+              </div>
+              <div class="chips-row">
+                <button class="chip-btn" data-query="図書館の開館時間は？">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                  </svg>
+                  開館時間は？
+                </button>
+                <button class="chip-btn" data-query="近くのトイレはどこですか？">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  近くのトイレは？
+                </button>
+                <button class="chip-btn" data-query="今日の学食メニューを教えて">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d8c40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
+                  </svg>
+                  学食のメニューは？
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Character column -->
+        <div id="char-col">
+          <div class="char-placeholder">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(61,140,64,0.4)" stroke-width="1.5">
+              <circle cx="12" cy="8" r="4"/><path d="M6 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+            </svg>
+            <span>AIサイコ<br>（キャラクター）</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div id="kiosk-footer">
+        <span id="time-display">00:00</span>
+        <span class="footer-center">学内案内システム（テストモード v1.0）</span>
+        <button class="lang-btn">Language &gt;</button>
+      </div>
+    </div>
+
+    <!-- Voice cluster (absolutely positioned over kiosk-root) -->
+    <div id="voice-cluster">
+      <button id="btn-back" class="back-btn" style="display:none;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+        戻る
+      </button>
+
+      <button id="btn-voice" class="voice-btn idle-glow" touch-action="none">
+        <span class="pulse-ring"></span>
+        <span class="pulse-ring ring2"></span>
+        <div id="voice-inner" class="voice-inner state-idle">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+          <span id="voice-label" class="voice-label">音声入力</span>
+        </div>
+      </button>
+
+      <div class="voice-status">
+        <div class="voice-status-row">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+          </svg>
+          <span id="voice-mode-label">音声 ON</span>
+        </div>
+        <div id="voice-transcript" class="voice-transcript">マイクをタップして音声入力を開始します</div>
+      </div>
+      <div class="voice-diagnostics">
+        <div class="diag-title">音声診断</div>
+        <div id="voice-diagnostics" class="diag-list"></div>
+      </div>
+    </div>
+
+  </div><!-- /kiosk-root -->
+</div><!-- /scaler-host -->
+
+<!-- ╔══════════════════════════════╗
+     ║  TEST LOG PANEL (fixed)      ║
+     ╚══════════════════════════════╝ -->
+<div id="test-log-panel">
+  <div id="log-header">
+    <span>🔬 タッチイベントログ</span>
+    <div class="log-controls">
+      <button class="log-ctrl-btn" id="btn-clear-log">クリア</button>
+      <button class="log-ctrl-btn" id="btn-toggle-log">非表示</button>
+    </div>
+  </div>
+  <div id="log-badges">
+    <span class="badge" id="badge-pointerdown">pointerdown</span>
+    <span class="badge" id="badge-pointerup">pointerup</span>
+    <span class="badge" id="badge-pointermove">pointermove</span>
+    <span class="badge" id="badge-pointerleave">pointerleave</span>
+    <span class="badge" id="badge-click">click</span>
+    <span class="badge" id="badge-pointercancel">cancel</span>
+  </div>
+  <div id="log-entries"></div>
+  <div id="log-footer">
+    <span id="fullscreen-status">フルスクリーン: 未テスト</span>
+    <span id="device-info">初期化中…</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ════════════════════════════════════
+     STATE
+  ════════════════════════════════════ */
+  const State = {
+    screen: 'start',
+    listening: false,
+    logCount: 0,
+    moveCount: 0,
+    recognitionSupported: false,
+    synthesisSupported: false,
+    voiceMode: 'demo',
+    interimTranscript: '',
+    finalTranscript: '',
+    micPermission: 'unknown',
+    lastVoiceToggleAt: 0,
+    secureContext: false,
+    topLevelContext: true,
+    mediaDevicesSupported: false,
+  };
+  const MAX_LOG = 300;
+  const DEMO_VOICE_QUERY = '図書館への行き方を教えて';
+  const DEMO_VOICE_RESPONSE = '図書館は中央棟2Fにあります。正門から入って右手の建物、エレベーターで2Fにお越しください。';
+
+  /* ════════════════════════════════════
+     DUMMY RESPONSES
+  ════════════════════════════════════ */
+  const CAT_RESPONSES = {
+    learning: 'ご質問は学習・講義についてですね。休講情報、教室変更、時間割、シラバスなど何でもお答えします。具体的に何をお調べですか？',
+    campus:   'キャンパス生活・施設についてのご質問ですね。学食、図書館、売店、主要ルートなどご案内できます。',
+    safety:   '安全・緊急情報についてのご質問です。避難経路、緊急連絡先、不審者情報などをご案内できます。',
+  };
+  const CHIP_RESPONSES = {
+    '図書館の開館時間は？':    '図書館の開館時間は、平日 8:30〜21:00、土曜日 9:00〜17:00 です。日曜・祝日は休館となります。',
+    '近くのトイレはどこですか？': '最寄りのトイレは中央棟1F・2Fの廊下突き当たりにございます。バリアフリートイレは1Fにあります。',
+    '今日の学食メニューを教えて': '本日の学食メニュー：定食A（唐揚げ定食）450円、定食B（サバ味噌定食）480円、ラーメン380円です。',
+    '図書館への行き方を教えて': DEMO_VOICE_RESPONSE,
+  };
+
+  /* ════════════════════════════════════
+     VIEWPORT SCALER
+  ════════════════════════════════════ */
+  function updateScale() {
+    const zoom = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const root = document.getElementById('kiosk-root');
+    root.style.transform = 'scale(' + zoom + ')';
+    root.style.left = ((window.innerWidth - 1920 * zoom) / 2) + 'px';
+    root.style.top  = ((window.innerHeight - 1080 * zoom) / 2) + 'px';
+  }
+  window.addEventListener('resize', updateScale);
+  updateScale();
+
+  /* ════════════════════════════════════
+     SCREEN MANAGEMENT
+  ════════════════════════════════════ */
+  function goToScreen(name) {
+    State.screen = name;
+    // Hide all screens
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const target = document.getElementById('screen-' + name);
+    if (target) target.classList.add('active');
+
+    const chrome  = document.getElementById('kiosk-chrome');
+    const cluster = document.getElementById('voice-cluster');
+    const backBtn = document.getElementById('btn-back');
+
+    if (name === 'start') {
+      chrome.classList.remove('visible');
+      cluster.classList.remove('visible');
+    } else {
+      chrome.classList.add('visible');
+      cluster.classList.add('visible');
+      backBtn.style.display = name === 'chat' ? 'flex' : 'none';
+    }
+
+    logEvent('screen', null, '→ ' + name);
+  }
+
+  /* ════════════════════════════════════
+     FULLSCREEN
+  ════════════════════════════════════ */
+  async function requestFullscreen() {
+    const el = document.documentElement;
+    try {
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+      logEvent('fullscreen', null, 'リクエスト成功');
+    } catch (e) {
+      logEvent('fullscreen', null, '失敗: ' + e.message);
+    }
+  }
+  document.addEventListener('fullscreenchange', function () {
+    const isFS = !!document.fullscreenElement;
+    document.getElementById('fullscreen-status').textContent =
+      'フルスクリーン: ' + (isFS ? '✓ ON' : '× OFF');
+    logEvent('fullscreen', null, isFS ? '有効' : '終了');
+  });
+
+  /* ════════════════════════════════════
+     CLOCK
+  ════════════════════════════════════ */
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('time-display').textContent = h + ':' + m;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  /* ════════════════════════════════════
+     DEVICE INFO
+  ════════════════════════════════════ */
+  function updateDeviceInfo() {
+    const ua = navigator.userAgent;
+    const platform = /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iOS' : 'Desktop';
+    const touch = navigator.maxTouchPoints > 0 ? 'touch×' + navigator.maxTouchPoints : 'mouse';
+    document.getElementById('device-info').textContent =
+      window.innerWidth + '×' + window.innerHeight + ' | ' + touch + ' | ' + platform;
+  }
+  updateDeviceInfo();
+  window.addEventListener('resize', updateDeviceInfo);
+
+  /* ════════════════════════════════════
+     VOICE CAPABILITY
+  ════════════════════════════════════ */
+  var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  State.recognitionSupported = !!SpeechRecognitionCtor;
+  State.synthesisSupported = typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined';
+  State.voiceMode = State.recognitionSupported ? 'speech-api' : 'demo';
+  State.secureContext = !!window.isSecureContext;
+  State.topLevelContext = window.top === window.self;
+  State.mediaDevicesSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+  /* ════════════════════════════════════
+     LOG ENGINE
+  ════════════════════════════════════ */
+  const badgeMap = {
+    pointerdown:   'badge-pointerdown',
+    pointerup:     'badge-pointerup',
+    pointermove:   'badge-pointermove',
+    pointerleave:  'badge-pointerleave',
+    click:         'badge-click',
+    pointercancel: 'badge-pointercancel',
+  };
+
+  function logEvent(type, target, detail) {
+    const now = new Date();
+    const ms  = String(now.getMilliseconds()).padStart(3, '0');
+    const ts  = now.toTimeString().slice(0, 8) + '.' + ms;
+
+    // Flash badge
+    const badgeId = badgeMap[type];
+    if (badgeId) {
+      const badge = document.getElementById(badgeId);
+      if (badge) {
+        badge.classList.add('flash-' + type);
+        setTimeout(function () { badge.classList.remove('flash-' + type); }, 350);
+      }
+    }
+
+    // Build log entry
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    const typeClass = 'log-type-' + type;
+    entry.innerHTML =
+      '<span class="log-time">' + ts + '</span> ' +
+      '<span class="' + typeClass + '">' + type + '</span>' +
+      (target ? ' <span class="log-target">[' + target + ']</span>' : '') +
+      (detail  ? ' <span class="log-detail">' + detail + '</span>' : '');
+
+    const logEl = document.getElementById('log-entries');
+    logEl.insertBefore(entry, logEl.firstChild);
+
+    State.logCount++;
+    if (State.logCount > MAX_LOG && logEl.lastChild) {
+      logEl.removeChild(logEl.lastChild);
+    }
+  }
+
+  function setVoiceTranscript(text) {
+    document.getElementById('voice-transcript').textContent = text;
+  }
+
+  function updateVoiceModeLabel() {
+    var mode = '音声 ON';
+    if (!State.recognitionSupported && !State.synthesisSupported) mode = '音声 DEMO';
+    else if (!State.recognitionSupported) mode = '音声入力 DEMO / 読み上げ ON';
+    else if (!State.synthesisSupported) mode = '音声入力 ON / 読み上げ OFF';
+    if (State.micPermission === 'denied') mode += ' / マイク拒否';
+    document.getElementById('voice-mode-label').textContent = mode;
+  }
+
+  function diagClass(status) {
+    if (status === 'ok') return 'diag-value diag-ok';
+    if (status === 'warn') return 'diag-value diag-warn';
+    return 'diag-value diag-ng';
+  }
+
+  function diagStatus(value) {
+    return value ? 'ok' : 'ng';
+  }
+
+  function buildDiagRow(name, value, status) {
+    return '<div class="diag-item">' +
+      '<span class="diag-name">' + name + '</span>' +
+      '<span class="' + diagClass(status) + '">' + value + '</span>' +
+      '</div>';
+  }
+
+  function updateVoiceDiagnostics() {
+    var html = '';
+    html += buildDiagRow('HTTPS / Secure', State.secureContext ? 'OK' : 'NG', diagStatus(State.secureContext));
+    html += buildDiagRow('Top Level', State.topLevelContext ? 'OK' : 'iframe', State.topLevelContext ? 'ok' : 'warn');
+    html += buildDiagRow('Speech API', State.recognitionSupported ? 'OK' : '非対応', State.recognitionSupported ? 'ok' : 'ng');
+    html += buildDiagRow('getUserMedia', State.mediaDevicesSupported ? 'OK' : '非対応', State.mediaDevicesSupported ? 'ok' : 'ng');
+    html += buildDiagRow(
+      'Mic Permission',
+      State.micPermission === 'granted' ? '許可' : State.micPermission === 'denied' ? '拒否' : '未確認',
+      State.micPermission === 'granted' ? 'ok' : State.micPermission === 'denied' ? 'ng' : 'warn'
+    );
+    document.getElementById('voice-diagnostics').innerHTML = html;
+  }
+
+  function updateVoicePrompt() {
+    if (State.listening) {
+      setVoiceTranscript(State.interimTranscript || '認識中... 話してください');
+      return;
+    }
+    if (State.finalTranscript) {
+      setVoiceTranscript('取得テキスト: ' + State.finalTranscript);
+      return;
+    }
+    if (State.recognitionSupported) {
+      setVoiceTranscript('マイクをタップして音声入力を開始します');
+    } else {
+      setVoiceTranscript('このブラウザは音声認識非対応です。タップでダミー音声入力を実行します');
+    }
+  }
+
+  updateVoiceModeLabel();
+  updateVoicePrompt();
+  updateVoiceDiagnostics();
+
+  /* ════════════════════════════════════
+     GLOBAL EVENT MONITORING
+  ════════════════════════════════════ */
+  ['pointerdown', 'pointerup', 'pointermove', 'pointerleave', 'click', 'pointercancel'].forEach(function (evType) {
+    document.addEventListener(evType, function (e) {
+      if (evType === 'pointermove') {
+        State.moveCount++;
+        if (State.moveCount % 30 !== 0) return; // throttle
+      }
+      const tag = e.target && (e.target.id || (e.target.className + '').slice(0, 18) || e.target.tagName);
+      const pt  = e.pointerType || 'mouse';
+      const x   = Math.round(e.clientX);
+      const y   = Math.round(e.clientY);
+      logEvent(evType, tag, '(' + x + ',' + y + ') ' + pt);
+    }, { passive: true });
+  });
+
+  /* ════════════════════════════════════
+     START BUTTON
+  ════════════════════════════════════ */
+  document.getElementById('btn-start').addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    requestFullscreen();
+    goToScreen('idle');
+  });
+  // Desktop fallback
+  document.getElementById('btn-start').addEventListener('click', function () {
+    if (State.screen === 'start') {
+      requestFullscreen();
+      goToScreen('idle');
+    }
+  });
+
+  /* ════════════════════════════════════
+     CATEGORY CARDS
+  ════════════════════════════════════ */
+  document.querySelectorAll('.category-card').forEach(function (card) {
+    var cat = card.dataset.category;
+
+    card.addEventListener('pointerdown', function (e) {
+      card.classList.add('pressed');
+    });
+    card.addEventListener('pointerup', function (e) {
+      card.classList.remove('pressed');
+      goToChat(cat);
+    });
+    card.addEventListener('pointerleave', function () {
+      card.classList.remove('pressed');
+    });
+    card.addEventListener('pointercancel', function () {
+      card.classList.remove('pressed');
+    });
+    // Desktop fallback
+    card.addEventListener('click', function () {
+      goToChat(cat);
+    });
+  });
+
+  /* ════════════════════════════════════
+     CHAT SIMULATION
+  ════════════════════════════════════ */
+  function goToChat(category) {
+    goToScreen('chat');
+    clearMessages();
+    document.getElementById('suggestion-area').style.display = 'none';
+    showTyping();
+    setTimeout(function () {
+      hideTyping();
+      appendMessage('assistant', CAT_RESPONSES[category] || 'どのようなことをお調べですか？');
+      document.getElementById('suggestion-area').style.display = 'block';
+    }, 1200);
+  }
+
+  function clearMessages() {
+    document.getElementById('messages-area').innerHTML = '';
+  }
+
+  var typingEl = null;
+  function showTyping() {
+    typingEl = document.createElement('div');
+    typingEl.className = 'typing-row';
+    typingEl.innerHTML =
+      '<div class="assistant-bubble typing-bubble">' +
+      '<span class="typing-dot"></span>' +
+      '<span class="typing-dot"></span>' +
+      '<span class="typing-dot"></span>' +
+      '</div>';
+    document.getElementById('messages-area').appendChild(typingEl);
+    scrollMessages();
+  }
+  function hideTyping() {
+    if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+    typingEl = null;
+  }
+
+  function appendMessage(type, text) {
+    var area = document.getElementById('messages-area');
+    var row = document.createElement('div');
+    row.className = 'message-row ' + (type === 'user' ? 'row-user' : 'row-assistant');
+    var bubble = document.createElement('div');
+    bubble.className = type === 'user' ? 'user-bubble' : 'assistant-bubble';
+    bubble.style.animation = (type === 'user' ? 'fadeInLeft' : 'fadeInRight') + ' 0.3s ease';
+    bubble.style.padding = '20px 32px';
+    var p = document.createElement('p');
+    p.style.fontSize = type === 'user' ? '24px' : '24px';
+    p.style.fontWeight = type === 'user' ? 'bold' : 'normal';
+    p.style.color = type === 'user' ? '#2e7d32' : '#1a1a1a';
+    p.style.lineHeight = '1.6';
+    p.textContent = text;
+    bubble.appendChild(p);
+    row.appendChild(bubble);
+    area.appendChild(row);
+    scrollMessages();
+    if (type === 'assistant') speakText(text);
+  }
+
+  function scrollMessages() {
+    var area = document.getElementById('messages-area');
+    area.scrollTop = area.scrollHeight;
+  }
+
+  /* ════════════════════════════════════
+     SUGGESTION CHIPS
+  ════════════════════════════════════ */
+  document.querySelectorAll('.chip-btn').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      var query = chip.dataset.query;
+      handleUserQuery(query);
+    });
+    chip.addEventListener('pointerdown', function () {
+      chip.style.transform = 'scale(0.95)';
+    });
+    chip.addEventListener('pointerup', function () {
+      chip.style.transform = '';
+    });
+    chip.addEventListener('pointerleave', function () {
+      chip.style.transform = '';
+    });
+  });
+
+  /* ════════════════════════════════════
+     VOICE BUTTON
+  ════════════════════════════════════ */
+  var voiceBtn   = document.getElementById('btn-voice');
+  var voiceInner = document.getElementById('voice-inner');
+  var voiceLabel = document.getElementById('voice-label');
+  var recognition = null;
+  var voiceTimer = null;
+
+  function setListening(val) {
+    State.listening = val;
+    if (val) {
+      voiceBtn.classList.remove('idle-glow');
+      voiceBtn.classList.add('listening');
+      voiceInner.className = 'voice-inner state-listening';
+      voiceLabel.textContent = '話してください';
+    } else {
+      voiceBtn.classList.remove('listening');
+      voiceBtn.classList.add('idle-glow');
+      voiceInner.className = 'voice-inner state-idle';
+      voiceLabel.textContent = '音声入力';
+    }
+    updateVoicePrompt();
+    logEvent('voice', 'btn-voice', val ? '録音中' : '停止');
+  }
+
+  function findAssistantResponse(query) {
+    if (CHIP_RESPONSES[query]) return CHIP_RESPONSES[query];
+    if (query.indexOf('図書館') >= 0 && query.indexOf('時間') >= 0) return CHIP_RESPONSES['図書館の開館時間は？'];
+    if (query.indexOf('トイレ') >= 0) return CHIP_RESPONSES['近くのトイレはどこですか？'];
+    if (query.indexOf('学食') >= 0 || query.indexOf('メニュー') >= 0) return CHIP_RESPONSES['今日の学食メニューを教えて'];
+    if (query.indexOf('図書館') >= 0 && (query.indexOf('行き') >= 0 || query.indexOf('場所') >= 0)) return DEMO_VOICE_RESPONSE;
+    return 'テスト用の簡易応答です。"' + query + '" を受け取りました。実機ではこのテキストが取得できていれば音声認識は成功です。';
+  }
+
+  function handleUserQuery(query) {
+    if (!query || !query.trim()) return;
+    var cleaned = query.trim();
+    State.finalTranscript = cleaned;
+    State.interimTranscript = '';
+    updateVoicePrompt();
+    if (State.screen !== 'chat') goToScreen('chat');
+    document.getElementById('suggestion-area').style.display = 'none';
+    appendMessage('user', cleaned);
+    showTyping();
+    setTimeout(function () {
+      hideTyping();
+      appendMessage('assistant', findAssistantResponse(cleaned));
+      document.getElementById('suggestion-area').style.display = 'block';
+    }, 1000);
+  }
+
+  function speakText(text) {
+    if (!State.synthesisSupported || !text) return;
+    try {
+      window.speechSynthesis.cancel();
+      var utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ja-JP';
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.onstart = function () {
+        logEvent('voice', 'tts', '読み上げ開始');
+      };
+      utterance.onend = function () {
+        logEvent('voice', 'tts', '読み上げ完了');
+      };
+      utterance.onerror = function (event) {
+        logEvent('voice', 'tts', '読み上げ失敗: ' + event.error);
+      };
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      logEvent('voice', 'tts', '読み上げ失敗: ' + e.message);
+    }
+  }
+
+  function clearVoiceTimer() {
+    if (!voiceTimer) return;
+    clearTimeout(voiceTimer);
+    voiceTimer = null;
+  }
+
+  async function ensureMicrophoneAccess() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      State.mediaDevicesSupported = false;
+      updateVoiceDiagnostics();
+      logEvent('voice', 'mic', 'getUserMedia未対応');
+      return false;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      State.micPermission = 'granted';
+      updateVoiceModeLabel();
+      updateVoiceDiagnostics();
+      stream.getTracks().forEach(function (track) { track.stop(); });
+      logEvent('voice', 'mic', 'マイク許可');
+      return true;
+    } catch (e) {
+      State.micPermission = 'denied';
+      updateVoiceModeLabel();
+      updateVoiceDiagnostics();
+      logEvent('voice', 'mic', 'マイク拒否: ' + e.message);
+      setVoiceTranscript('マイク権限が必要です。Chromeのサイト設定でマイクを許可してください');
+      return false;
+    }
+  }
+
+  function startDemoVoiceCapture() {
+    clearVoiceTimer();
+    State.finalTranscript = '';
+    setListening(true);
+    State.interimTranscript = 'デモ音声入力中... もう一度タップで送信';
+    updateVoicePrompt();
+  }
+
+  function ensureRecognition() {
+    if (recognition || !SpeechRecognitionCtor) return recognition;
+    recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'ja-JP';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = function () {
+      logEvent('voice', 'stt', '音声認識開始');
+    };
+    recognition.onresult = function (event) {
+      var interim = '';
+      var finalText = '';
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        var transcript = event.results[i][0] && event.results[i][0].transcript ? event.results[i][0].transcript : '';
+        if (event.results[i].isFinal) finalText += transcript;
+        else interim += transcript;
+      }
+      State.interimTranscript = interim.trim();
+      if (finalText.trim()) {
+        State.finalTranscript = finalText.trim();
+        logEvent('voice', 'stt', '取得: ' + State.finalTranscript);
+      }
+      updateVoicePrompt();
+    };
+    recognition.onerror = function (event) {
+      logEvent('voice', 'stt', '認識失敗: ' + event.error);
+      setListening(false);
+      recognition = null;
+    };
+    recognition.onend = function () {
+      var transcript = (State.finalTranscript || State.interimTranscript || '').trim();
+      setListening(false);
+      recognition = null;
+      if (transcript) handleUserQuery(transcript);
+      else updateVoicePrompt();
+    };
+    return recognition;
+  }
+
+  async function startRecognitionCapture() {
+    var instance = ensureRecognition();
+    if (!instance) {
+      startDemoVoiceCapture();
+      return;
+    }
+    var micOk = await ensureMicrophoneAccess();
+    if (!micOk) return;
+    clearVoiceTimer();
+    State.interimTranscript = '';
+    State.finalTranscript = '';
+    updateVoicePrompt();
+    setListening(true);
+    try {
+      instance.start();
+    } catch (e) {
+      logEvent('voice', 'stt', '開始失敗: ' + e.message);
+      setListening(false);
+      recognition = null;
+    }
+  }
+
+  function stopVoice(reason) {
+    if (!State.listening) return;
+    clearVoiceTimer();
+    if (State.voiceMode === 'demo') {
+      setListening(false);
+      handleUserQuery(State.finalTranscript || DEMO_VOICE_QUERY);
+      return;
+    }
+    if (recognition) {
+      try {
+        recognition.stop();
+        logEvent('voice', 'stt', '認識停止: ' + (reason || 'manual'));
+      } catch (e) {
+        logEvent('voice', 'stt', '停止失敗: ' + e.message);
+        setListening(false);
+        recognition = null;
+      }
+    } else {
+      setListening(false);
+    }
+  }
+
+  function toggleVoiceInput() {
+    var now = Date.now();
+    if (now - State.lastVoiceToggleAt < 250) return;
+    State.lastVoiceToggleAt = now;
+    if (State.listening) {
+      logEvent('voice', 'btn-voice', 'タップで送信');
+      stopVoice('tap');
+      return;
+    }
+    logEvent('voice', 'btn-voice', 'タップで開始');
+    startRecognitionCapture();
+  }
+
+  voiceBtn.addEventListener('pointerup', function (e) {
+    e.preventDefault();
+    toggleVoiceInput();
+  });
+  voiceBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    toggleVoiceInput();
+  });
+
+  /* ════════════════════════════════════
+     BACK BUTTON
+  ════════════════════════════════════ */
+  document.getElementById('btn-back').addEventListener('click', function () {
+    clearMessages();
+    goToScreen('idle');
+  });
+  document.getElementById('btn-back').addEventListener('pointerdown', function () {
+    document.getElementById('btn-back').style.transform = 'scale(0.95)';
+  });
+  document.getElementById('btn-back').addEventListener('pointerup', function () {
+    document.getElementById('btn-back').style.transform = '';
+  });
+
+  /* ════════════════════════════════════
+     LOG PANEL CONTROLS
+  ════════════════════════════════════ */
+  document.getElementById('btn-clear-log').addEventListener('click', function () {
+    document.getElementById('log-entries').innerHTML = '';
+    State.logCount = 0;
+  });
+  document.getElementById('btn-toggle-log').addEventListener('click', function () {
+    var panel = document.getElementById('test-log-panel');
+    var collapsed = panel.classList.toggle('collapsed');
+    document.getElementById('btn-toggle-log').textContent = collapsed ? '表示' : '非表示';
+  });
+
+  /* ════════════════════════════════════
+     INIT LOG
+  ════════════════════════════════════ */
+  logEvent('screen', null, '初期化完了 → start');
+  logEvent('voice', 'init', 'speech=' + (State.recognitionSupported ? 'on' : 'demo') + ' tts=' + (State.synthesisSupported ? 'on' : 'off'));
+  logEvent('voice', 'diag', 'secure=' + (State.secureContext ? 'on' : 'off') + ' top=' + (State.topLevelContext ? 'top' : 'iframe') + ' gum=' + (State.mediaDevicesSupported ? 'on' : 'off'));
+  updateDeviceInfo();
+
+})();
+</script>
+</body>
+</html>
