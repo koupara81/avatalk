@@ -169,6 +169,7 @@
     .char-video {
       position: absolute;
       inset: 0;
+      z-index: 1;
       width: 100%;
       height: 100%;
       object-fit: contain;
@@ -179,6 +180,7 @@
     .char-mouth-canvas {
       position: absolute;
       inset: 0;
+      z-index: 3;
       width: 100%;
       height: 100%;
       pointer-events: none;
@@ -401,7 +403,7 @@
     }
     body.portrait-mode #messages-area {
       gap: 18px;
-      padding: 0 18px;
+      padding: 0 18px 132px;
     }
     body.portrait-mode #screen-chat .message-row {
       width: 100%;
@@ -451,6 +453,7 @@
     }
     body.portrait-mode #suggestion-area {
       padding: 18px 8px 0;
+      flex-shrink: 0;
     }
     body.portrait-mode .suggest-label {
       margin-bottom: 10px;
@@ -1580,6 +1583,7 @@
       hideTyping();
       appendMessage('assistant', CAT_RESPONSES[category] || 'どのようなことをお調べですか？');
       document.getElementById('suggestion-area').style.display = 'block';
+      scrollMessages();
     }, 1200);
   }
 
@@ -1628,7 +1632,9 @@
 
   function scrollMessages() {
     var area = document.getElementById('messages-area');
-    area.scrollTop = area.scrollHeight;
+    requestAnimationFrame(function () {
+      area.scrollTop = area.scrollHeight;
+    });
   }
 
   /* ════════════════════════════════════
@@ -1671,6 +1677,28 @@
   var mouthFlapLastTs = 0;
   var simulatedSpeechTimer = null;
 
+  function scheduleCharacterStop(durationMs) {
+    clearTimeout(simulatedSpeechTimer);
+    simulatedSpeechTimer = setTimeout(function () {
+      stopCharacterSpeaking();
+    }, durationMs);
+  }
+
+  function buildFallbackMouthTrack() {
+    var fallbackFrame = {
+      quad: [
+        [327.7820129394531, 348.2068176269531],
+        [385.0011291503906, 348.2162780761719],
+        [384.9916687011719, 405.4353942871094],
+        [327.7725524902344, 405.4259338378906],
+      ],
+      valid: true,
+    };
+    var frames = [];
+    for (var i = 0; i < 240; i++) frames.push(fallbackFrame);
+    return { fps: 24, width: 720, height: 1280, frames: frames };
+  }
+
   fetch(MOUTH_TRACK_SRC)
     .then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1680,10 +1708,17 @@
       mouthTrack = track;
       mouthTrackReady = !!(track && track.frames && track.frames.length);
       logEvent('voice', 'mouth-track', mouthTrackReady ? '読込完了' : '空データ');
+      if (characterSpeaking && mouthTrackReady && mouthSpritesReady && !mouthAnimationId) {
+        mouthAnimationId = requestAnimationFrame(renderMouth);
+      }
     })
     .catch(function (e) {
-      mouthTrackReady = false;
-      logEvent('voice', 'mouth-track', '読込失敗: ' + e.message);
+      mouthTrack = buildFallbackMouthTrack();
+      mouthTrackReady = true;
+      logEvent('voice', 'mouth-track', '読込失敗 fallback使用: ' + e.message);
+      if (characterSpeaking && mouthSpritesReady && !mouthAnimationId) {
+        mouthAnimationId = requestAnimationFrame(renderMouth);
+      }
     });
 
   Promise.all(MOUTH_SPRITES.map(function (name) {
@@ -1702,19 +1737,31 @@
     .then(function () {
       mouthSpritesReady = true;
       logEvent('voice', 'mouth-sprites', '読込完了');
+      if (characterSpeaking && mouthTrackReady && !mouthAnimationId) {
+        mouthAnimationId = requestAnimationFrame(renderMouth);
+      }
     })
     .catch(function (e) {
       mouthSpritesReady = false;
       logEvent('voice', 'mouth-sprites', '読込失敗: ' + e.message);
     });
 
-  function setCharacterVideoSource(src) {
+  function setCharacterVideoSource(src, force) {
     if (!charVideo || !src) return;
-    var current = charVideo.getAttribute('src') || '';
-    if (current === src || charVideo.currentSrc.indexOf(src.replace('./', '')) >= 0) return;
-    charVideo.src = src;
-    charVideo.load();
-    charVideo.play().catch(function () {});
+    var sameSource = charVideo.dataset.characterSrc === src;
+    if (!sameSource || force) {
+      charVideo.dataset.characterSrc = src;
+      charVideo.src = src;
+      charVideo.load();
+      try {
+        charVideo.currentTime = 0;
+      } catch (e) {
+        // Some browsers reject currentTime before metadata is ready.
+      }
+    }
+    charVideo.play().catch(function (e) {
+      logEvent('voice', 'character', '動画再生失敗: ' + e.message);
+    });
   }
 
   function resizeMouthCanvas() {
@@ -1828,7 +1875,11 @@
     mouthFlapState = 0;
     mouthFlapLastTs = 0;
     clearTimeout(simulatedSpeechTimer);
-    setCharacterVideoSource(CHARACTER_TALK_SRC);
+    if (!mouthTrackReady) {
+      mouthTrack = buildFallbackMouthTrack();
+      mouthTrackReady = true;
+    }
+    setCharacterVideoSource(CHARACTER_TALK_SRC, true);
     if (mouthCanvas) mouthCanvas.classList.add('visible');
     if (!mouthAnimationId) mouthAnimationId = requestAnimationFrame(renderMouth);
     logEvent('voice', 'character', '口パク開始');
@@ -1845,7 +1896,7 @@
     }
     clearMouthCanvas();
     if (mouthCanvas) mouthCanvas.classList.remove('visible');
-    setCharacterVideoSource(CHARACTER_IDLE_SRC);
+    setCharacterVideoSource(CHARACTER_IDLE_SRC, true);
     logEvent('voice', 'character', '口パク停止');
   }
 
@@ -1890,6 +1941,7 @@
       hideTyping();
       appendMessage('assistant', findAssistantResponse(cleaned));
       document.getElementById('suggestion-area').style.display = 'block';
+      scrollMessages();
     }, 1000);
   }
 
@@ -1897,18 +1949,17 @@
     if (!text) return;
     if (!State.synthesisSupported) {
       startCharacterSpeaking();
-      simulatedSpeechTimer = setTimeout(stopCharacterSpeaking, Math.min(6500, Math.max(1800, text.length * 95)));
+      scheduleCharacterStop(Math.min(6500, Math.max(1800, text.length * 95)));
       return;
     }
     try {
-      stopCharacterSpeaking();
       window.speechSynthesis.cancel();
+      startCharacterSpeaking();
       var utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ja-JP';
       utterance.rate = 1;
       utterance.pitch = 1;
       utterance.onstart = function () {
-        startCharacterSpeaking();
         logEvent('voice', 'tts', '読み上げ開始');
       };
       utterance.onend = function () {
@@ -1920,6 +1971,7 @@
         logEvent('voice', 'tts', '読み上げ失敗: ' + event.error);
       };
       window.speechSynthesis.speak(utterance);
+      scheduleCharacterStop(Math.min(9000, Math.max(2400, text.length * 115)));
     } catch (e) {
       stopCharacterSpeaking();
       logEvent('voice', 'tts', '読み上げ失敗: ' + e.message);
